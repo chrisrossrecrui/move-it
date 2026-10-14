@@ -1,0 +1,36 @@
+{
+  "url": "http://127.0.0.1:8080/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Colorado Transport & Freight | Move it",
+      "hasCanvas": false,
+      "bodyTextLen": 3741,
+      "bodyTextHash": "6e5c07181dda33a1909c076e166804f3dbe6ef97989ed8d0460c2a1d59c06c14",
+      "bodyTextPrefix": "Move it Get Instant Quote COLORADO TRANSPORT SOLUTIONS Reliable ",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Colorado Transport & Freight | Move it",
+      "hasCanvas": false,
+      "bodyTextLen": 3759,
+      "bodyTextHash": "d6459a5b45697f82493f2e2d6a4d97e5809244e2e34392739aa1f18d3e226a54",
+      "bodyTextPrefix": "Move it Get Instant Quote COLORADO TRANSPORT SOLUTIONS Reliable ",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-preview.json"
+}

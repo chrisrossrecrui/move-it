@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Move it">
+  <rect width="32" height="32" rx="7" fill="#111214"/>
+  <path fill="#5C6B7A" d="M2 22.5 9.2 12.2 13.4 17.6 16 14.2 19.6 19.2 22.5 14.8 30 22.5Z"/>
+  <path fill="#FFFFFF" d="M3 21.2 10.5 11.4 14.2 16.2 16.6 13.2 20.4 18.4 23.2 14.4 29.2 21.2Z"/>
+  <rect x="5" y="23.2" width="22" height="2.4" rx="1.2" fill="#FF6B00"/>
+</svg>
