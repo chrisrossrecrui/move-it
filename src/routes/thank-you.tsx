@@ -7,6 +7,7 @@ import {
   greetingName,
   readConsult,
   readLead,
+  readLeadKey,
   saveConsult,
   upcomingDays,
   type Lead,
@@ -50,8 +51,24 @@ function ThankYouPage() {
 
   function holdWindow() {
     if (!date) return;
-    saveConsult({ date, window: slot, savedAt: new Date().toISOString() });
+    const consult = { date, window: slot, savedAt: new Date().toISOString() };
+    saveConsult(consult);
     setSaved(true);
+    const key = readLeadKey();
+    if (!lead || !key) return;
+    void fetch("/api/consults", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        key,
+        ...consult,
+        name: lead.name,
+        phone: lead.phone,
+        service: lead.service,
+      }),
+    }).catch(() => {
+      // The window is already stored on this device.
+    });
   }
 
   return (

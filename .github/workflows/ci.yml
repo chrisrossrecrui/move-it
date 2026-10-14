@@ -1,0 +1,128 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    name: typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: vite-output
+          path: |
+            dist
+            .output
+          if-no-files-found: warn
+          retention-days: 7
+
+  framework-floor:
+    name: framework-floor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Enforce TanStack Start >= 1.168.60
+        run: |
+          node -e '
+            const v = require("@tanstack/react-start/package.json").version;
+            const [maj, min, pat] = v.split(".").map(Number);
+            const ok = maj > 1 || (maj === 1 && (min > 168 || (min === 168 && pat >= 60)));
+            if (!ok) { console.error("Vulnerable TanStack Start " + v); process.exit(1); }
+            console.log("tanstack-start " + v);
+          '
+
+  lighthouse:
+    name: lighthouse
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx --yes playwright install --with-deps chromium
+      - run: npm run build
+      - name: Preview and audit
+        run: |
+          npm run preview -- --host 127.0.0.1 --port 4173 &
+          for i in $(seq 1 40); do curl -sf -o /dev/null http://127.0.0.1:4173/ && break; sleep 1; done
+          npx --yes lighthouse@12 http://127.0.0.1:4173/ --only-categories=performance,accessibility,best-practices,seo --output=json --output-path=/tmp/lh-home.json --chrome-flags="--headless --no-sandbox" --quiet
+          npx --yes lighthouse@12 http://127.0.0.1:4173/thank-you --only-categories=performance,accessibility,best-practices,seo --output=json --output-path=/tmp/lh-thanks.json --chrome-flags="--headless --no-sandbox" --quiet
+          node scripts/lighthouse-budget.mjs /tmp/lh-home.json /tmp/lh-thanks.json
+
+  conversion-smoke:
+    name: conversion-smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx --yes playwright install --with-deps chromium
+      - run: npm run build
+      - name: Preview and smoke
+        run: |
+          npm run preview -- --host 127.0.0.1 --port 4173 &
+          for i in $(seq 1 40); do curl -sf -o /dev/null http://127.0.0.1:4173/ && break; sleep 1; done
+          node scripts/conversion-smoke.mjs --url http://127.0.0.1:4173

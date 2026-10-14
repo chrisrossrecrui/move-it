@@ -1,0 +1,91 @@
+name: lead-intake
+
+on:
+  repository_dispatch:
+    types: [moveit.lead.created, moveit.consult.selected]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  queue:
+    name: queue-lead
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
+        with:
+          script: |
+            const payload = context.payload.client_payload || {};
+            const key = String(payload.key || "");
+            if (!/^[a-f0-9]{64}$/.test(key)) {
+              core.setFailed("Missing lead key.");
+              return;
+            }
+            const name = String(payload.name || "Unknown");
+            const service = String(payload.service || "Other");
+            const slug = String(payload.serviceSlug || "other");
+            const last4 = String(payload.phoneLast4 || "----");
+            const phone = String(payload.phone || "");
+            const marker = `<!-- lead:${key} -->`;
+            const keyLine = `Lead-Key: ${key}`;
+            const labels = ["lead", `service:${slug}`, "colorado", "sla:due"];
+
+            async function ensureLabel(label) {
+              try {
+                await github.rest.issues.getLabel({ ...context.repo, name: label });
+              } catch {
+                await github.rest.issues.createLabel({
+                  ...context.repo,
+                  name: label,
+                  color: label.startsWith("sla:") ? "b60205" : "0e4b8b",
+                });
+              }
+            }
+            for (const label of labels) await ensureLabel(label);
+
+            const search = await github.rest.search.issuesAndPullRequests({
+              q: `repo:${context.repo.owner}/${context.repo.repo} is:issue "${key}"`,
+            });
+            const existing = search.data.items[0];
+            const title = `[Quote] ${service} — ${name} ···${last4}`;
+            const consult = payload.date
+              ? `\n\n**Consult:** ${payload.date} (${payload.window})`
+              : "";
+            const body = [
+              marker,
+              keyLine,
+              "",
+              `**Service:** ${service}`,
+              `**Name:** ${name}`,
+              `**Phone:** ${phone}`,
+              `**Submitted:** ${payload.submittedAt || payload.savedAt || ""}`,
+              payload.message ? `**Message:** ${payload.message}` : "",
+              consult,
+              "",
+              "Queue item for Move it, Colorado. Do not copy the phone into logs or PR comments.",
+            ].filter(Boolean).join("\n");
+
+            if (!existing) {
+              await github.rest.issues.create({
+                ...context.repo,
+                title,
+                body,
+                labels,
+              });
+              return;
+            }
+            await github.rest.issues.update({
+              ...context.repo,
+              issue_number: existing.number,
+              title,
+              body,
+              labels,
+            });
+            if (context.payload.action === "moveit.consult.selected" || payload.date) {
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number: existing.number,
+                body: `Consult window set: ${payload.date} ${payload.window}.`,
+              });
+            }

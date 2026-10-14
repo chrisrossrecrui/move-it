@@ -1,0 +1,82 @@
+name: preview
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  preview:
+    name: preview
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Resolve preview URL
+        id: preview
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "url=" >> "$GITHUB_OUTPUT"
+            echo "missing=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          url=$(curl -fsS -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v6/deployments?projectId=$VERCEL_PROJECT_ID&teamId=$VERCEL_ORG_ID&limit=20" \
+            | node -e '
+              let raw=""; process.stdin.on("data", c => raw += c); process.stdin.on("end", () => {
+                const data = JSON.parse(raw);
+                const sha = process.env.GITHUB_SHA;
+                const hit = (data.deployments || []).find((item) => item.meta && item.meta.githubCommitSha === sha);
+                if (hit) process.stdout.write("https://" + hit.url);
+              });
+            ')
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "missing=false" >> "$GITHUB_OUTPUT"
+      - name: Sticky preview comment
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
+        with:
+          script: |
+            const marker = "<!-- moveit-preview -->";
+            const url = "${{ steps.preview.outputs.url }}";
+            const missing = "${{ steps.preview.outputs.missing }}" === "true";
+            const body = missing
+              ? `${marker}\n\nPreview URL pending. Set \`VERCEL_TOKEN\`, \`VERCEL_ORG_ID\`, and \`VERCEL_PROJECT_ID\`.`
+              : `${marker}\n\nPreview: ${url || "waiting for the Vercel deployment of this SHA."}`;
+            const comments = await github.rest.issues.listComments({
+              ...context.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.data.find((comment) => comment.body && comment.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: context.issue.number, body });
+            }
+      - run: npx --yes playwright install --with-deps chromium
+      - run: npm run build
+      - name: Screenshots and visual diff
+        run: |
+          npm run preview -- --host 127.0.0.1 --port 4173 &
+          for i in $(seq 1 40); do curl -sf -o /dev/null http://127.0.0.1:4173/ && break; sleep 1; done
+          changed=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E '^(src/components/|src/routes/)' || true)
+          node scripts/visual-diff.mjs --url http://127.0.0.1:4173 --out /tmp/visual --baseline .github/visual ${changed:+--enforce}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: visual-${{ github.run_id }}
+          path: /tmp/visual
+          if-no-files-found: warn
+          retention-days: 7

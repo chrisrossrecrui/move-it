@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { SERVICE_OPTIONS, saveLead, type ServiceNeed } from "@/lib/lead";
+import { SERVICE_OPTIONS, saveLead, saveLeadKey, type ServiceNeed } from "@/lib/lead";
 
 const field =
   "mt-1.5 h-12 w-full rounded-xl border border-line bg-paper px-3 text-base text-ink outline-none transition focus:border-accent";
@@ -18,7 +18,7 @@ export function QuoteForm({ idPrefix, anchorId }: Props) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  function onSubmit(event: FormEvent<HTMLFormElement>) {
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmedName = name.trim();
     const digits = phone.replace(/\D/g, "");
@@ -31,13 +31,27 @@ export function QuoteForm({ idPrefix, anchorId }: Props) {
       return;
     }
     setError(null);
-    saveLead({
+    const lead = {
       name: trimmedName,
       phone: phone.trim(),
       service,
       message: message.trim(),
       submittedAt: new Date().toISOString(),
-    });
+    };
+    saveLead(lead);
+    try {
+      const response = await fetch("/api/leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(lead),
+      });
+      if (response.ok) {
+        const data = (await response.json()) as { key?: string };
+        if (data.key) saveLeadKey(data.key);
+      }
+    } catch {
+      // Quote UX must not fail closed if the intake service is down.
+    }
     void navigate({ to: "/thank-you" });
   }
 

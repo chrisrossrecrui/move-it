@@ -1,0 +1,89 @@
+name: uptime
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  actions: read
+
+jobs:
+  probe:
+    name: synthetic-probe
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
+        env:
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        with:
+          script: |
+            const base = (process.env.PRODUCTION_URL || "").replace(/\/$/, "");
+            if (!base) {
+              core.setFailed("Set the PRODUCTION_URL repository variable to the live origin.");
+              return;
+            }
+            const paths = ["/", "/thank-you"];
+            const failures = [];
+            for (const path of paths) {
+              const started = Date.now();
+              let response;
+              try {
+                response = await fetch(base + path, { redirect: "follow" });
+              } catch (error) {
+                failures.push({ path, reason: "network" });
+                continue;
+              }
+              const ttfb = Date.now() - started;
+              const text = await response.text();
+              if (response.status !== 200) failures.push({ path, reason: `status ${response.status}`, ttfb });
+              else if (!text.includes("Move it")) failures.push({ path, reason: "missing wordmark", ttfb });
+              else if (ttfb > 800) failures.push({ path, reason: `ttfb ${ttfb}ms`, ttfb, slow: true });
+            }
+            if (!failures.length) return;
+
+            const previous = await github.rest.actions.listWorkflowRuns({
+              ...context.repo,
+              workflow_id: "uptime.yml",
+              status: "completed",
+              per_page: 2,
+            });
+            const last = (previous.data.workflow_runs || []).find((run) => run.id !== context.runId);
+            const consecutiveSlow = failures.every((item) => item.slow) && last && last.conclusion === "failure";
+            const hard = failures.some((item) => !item.slow);
+            if (!hard && !consecutiveSlow) {
+              core.warning("TTFB over 800ms once. Waiting for a second consecutive run.");
+              core.setFailed("TTFB budget missed.");
+              return;
+            }
+
+            const marker = "<!-- moveit-ops:uptime -->";
+            const open = await github.rest.issues.listForRepo({ ...context.repo, state: "open", labels: "ops" });
+            const existing = open.data.find((issue) => issue.body && issue.body.includes(marker));
+            const body = [
+              marker,
+              "",
+              `Probe failed on ${base}.`,
+              "",
+              "```",
+              JSON.stringify(failures, null, 2).slice(0, 1500),
+              "```",
+              "",
+              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            ].join("\n");
+            if (!existing) {
+              try {
+                await github.rest.issues.getLabel({ ...context.repo, name: "ops" });
+              } catch {
+                await github.rest.issues.createLabel({ ...context.repo, name: "ops", color: "d93f0b" });
+              }
+              await github.rest.issues.create({
+                ...context.repo,
+                title: "[ops] Production probe failed",
+                body,
+                labels: ["ops"],
+              });
+            }
+            core.setFailed("Production probe failed.");

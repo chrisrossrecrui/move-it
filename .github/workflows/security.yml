@@ -1,0 +1,54 @@
+name: security
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  audit:
+    name: npm-audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Report production audit
+        run: npm audit --omit=dev --json > /tmp/audit.json || true
+      - name: Block on critical production advisories
+        run: |
+          node -e '
+            const fs = require("fs");
+            const report = JSON.parse(fs.readFileSync("/tmp/audit.json", "utf8"));
+            const vulns = report.vulnerabilities || {};
+            const critical = Object.values(vulns).filter((item) => item.severity === "critical");
+            console.log("critical production advisories:", critical.length);
+            if (critical.length) {
+              for (const item of critical) console.error(item.name, item.via);
+              process.exit(1);
+            }
+          '
+
+  codeql:
+    name: codeql
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: github/codeql-action/init@181d5eefc20863364f96762470ba6f862bdef56b
+        with:
+          languages: javascript-typescript
+      - uses: github/codeql-action/analyze@181d5eefc20863364f96762470ba6f862bdef56b

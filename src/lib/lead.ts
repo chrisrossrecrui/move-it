@@ -31,6 +31,7 @@ export const WINDOWS: { id: WindowId; label: string; hours: string }[] = [
 ];
 
 const LEAD_KEY = "moveit.lead";
+const LEAD_ID_KEY = "moveit.leadKey";
 const CONSULT_KEY = "moveit.consult";
 
 export function saveLead(lead: Lead) {
@@ -45,6 +46,19 @@ export function readLead(): Lead | null {
     if (!data.name || !data.phone || !data.service) return null;
     if (!SERVICE_OPTIONS.includes(data.service as ServiceNeed)) return null;
     return data as Lead;
+  } catch {
+    return null;
+  }
+}
+
+export function saveLeadKey(key: string) {
+  localStorage.setItem(LEAD_ID_KEY, key);
+}
+
+export function readLeadKey(): string | null {
+  try {
+    const key = localStorage.getItem(LEAD_ID_KEY);
+    return key && /^[a-f0-9]{64}$/.test(key) ? key : null;
   } catch {
     return null;
   }

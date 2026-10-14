@@ -1,0 +1,53 @@
+name: lead-sla
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  breach:
+    name: sla-breach
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
+        with:
+          script: |
+            const fourHours = 4 * 60 * 60 * 1000;
+            const now = Date.now();
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              ...context.repo,
+              state: "open",
+              labels: "sla:due",
+              per_page: 50,
+            });
+            for (const issue of issues) {
+              if (issue.pull_request) continue;
+              const age = now - new Date(issue.created_at).getTime();
+              if (age < fourHours) continue;
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                ...context.repo,
+                issue_number: issue.number,
+                per_page: 100,
+              });
+              const already = comments.some((comment) => comment.body && comment.body.includes("<!-- sla:breach -->"));
+              if (already) continue;
+              const labels = (issue.labels || []).map((label) => (typeof label === "string" ? label : label.name)).filter(Boolean);
+              const next = labels.filter((label) => label !== "sla:due");
+              if (!next.includes("sla:breach")) next.push("sla:breach");
+              try {
+                await github.rest.issues.getLabel({ ...context.repo, name: "sla:breach" });
+              } catch {
+                await github.rest.issues.createLabel({ ...context.repo, name: "sla:breach", color: "b60205" });
+              }
+              await github.rest.issues.update({ ...context.repo, issue_number: issue.number, labels: next });
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number: issue.number,
+                body: "<!-- sla:breach -->\n\nFirst-response SLA of 4 hours has passed. This quote still needs a reply.",
+              });
+            }
